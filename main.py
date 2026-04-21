@@ -18,15 +18,20 @@ import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))
 
 from src.simulator import render_scene, render_batch
-from styles.luna import list_styles
+from styles.luna import list_styles as list_ball_styles
+from styles.luna_dot import list_dot_styles
 
 
 def main():
     args = sys.argv[1:]
 
     if "--list-styles" in args:
-        print("\n🌙 Available Luna Styles:\n")
-        for key, name, desc in list_styles():
+        print("\n🌙 Luna Ball Styles:\n")
+        for key, name, desc in list_ball_styles():
+            print(f"  {key:12} — {name}")
+            print(f"             {desc}\n")
+        print("\n✨ Luna Dot Styles (minimal):\n")
+        for key, name, desc in list_dot_styles():
             print(f"  {key:12} — {name}")
             print(f"             {desc}\n")
         return

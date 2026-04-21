@@ -1,19 +1,21 @@
 """
-Renderer with glow, trails, particles and post-effects.
-Pure Pillow, no pygame needed for static frame generation.
+Renderer with multiple modes:
+- BALL mode: full glowing orb with particles
+- DOT mode: minimal point/line, ultra-thin abstract
+All rendered with pure PIL.
 """
 
 import math
 import random
 from dataclasses import dataclass
-from typing import List, Tuple, Optional
-from PIL import Image, ImageDraw, ImageFilter, ImageEnhance
+from typing import List, Tuple
+from PIL import Image, ImageDraw, ImageFilter
+
 from ball import Ball, Vector2, Collision
 
 
 @dataclass
 class Particle:
-    """Small particle for collision effects."""
     x: float
     y: float
     vx: float
@@ -25,14 +27,12 @@ class Particle:
 
 
 class ParticleSystem:
-    """Manages particles spawned on collisions."""
-
     def __init__(self, max_particles: int = 200):
         self.particles: List[Particle] = []
         self.max_particles = max_particles
 
-    def spawn(self, x: float, y: float, speed: float, normal: Vector2, color: Tuple[int, int, int], count: int = 8):
-        """Spawn particles at collision point."""
+    def spawn(self, x: float, y: float, speed: float, normal: Vector2,
+              color: Tuple[int, int, int], count: int = 8):
         for _ in range(count):
             angle = math.atan2(normal.y, normal.x) + random.uniform(-math.pi/2, math.pi/2)
             vel = random.uniform(0.5, 2.5) * (speed / 10)
@@ -47,11 +47,10 @@ class ParticleSystem:
             ))
 
     def update(self, dt: float = 1.0):
-        """Update all particles."""
         for p in self.particles:
             p.x += p.vx * dt
             p.y += p.vy * dt
-            p.vy += 0.05 * dt  # slight gravity
+            p.vy += 0.05 * dt
             p.life -= (1.0 / p.max_life) * dt
         self.particles = [p for p in self.particles if p.life > 0]
 
@@ -60,7 +59,7 @@ class ParticleSystem:
 
 
 class Renderer:
-    """Renders a ball scene with effects to a PIL Image."""
+    """Main renderer supporting BALL and DOT modes."""
 
     def __init__(self, width: int, height: int, style: dict):
         self.width = width
@@ -68,18 +67,13 @@ class Renderer:
         self.style = style
         self.particles = ParticleSystem()
         self.frame = 0
-
-        # Pre-build background
         self._build_background()
 
     def _build_background(self):
-        """Create the static background layer."""
         bg = self.style.get("background", (10, 6, 18))
         self.background = Image.new("RGB", (self.width, self.height), bg)
-
         draw = ImageDraw.Draw(self.background)
 
-        # Grid lines (subtle)
         if self.style.get("grid_enabled", False):
             grid_color = tuple(max(0, c - 15) for c in bg)
             step = self.style.get("grid_step", 80)
@@ -88,7 +82,6 @@ class Renderer:
             for y in range(0, self.height, step):
                 draw.line([(0, y), (self.width, y)], grid_color, width=1)
 
-        # Central guide circle (threshold aesthetic)
         if self.style.get("center_ring", False):
             cx, cy = self.width // 2, self.height // 2
             r = min(self.width, self.height) // 3
@@ -96,10 +89,19 @@ class Renderer:
             draw.ellipse([cx-r, cy-r, cx+r, cy+r], outline=ring_color, width=2)
 
     def render_frame(self, ball: Ball, flash_intensity: float = 0.0) -> Image:
-        """Render one frame to an Image."""
+        """Route to the appropriate renderer based on mode."""
         self.frame += 1
+        dot_mode = self.style.get("dot_mode", False)
 
-        # Render order: background → trails → particles → ball → glow → flash
+        if dot_mode:
+            return self._render_dot_frame(ball, flash_intensity)
+        else:
+            return self._render_ball_frame(ball, flash_intensity)
+
+    # ─── BALL MODE ───────────────────────────────────────────────────────────
+
+    def _render_ball_frame(self, ball: Ball, flash_intensity: float = 0.0) -> Image:
+        """Full glowing orb with particles."""
         img = self.background.copy()
         draw = ImageDraw.Draw(img)
 
@@ -124,12 +126,10 @@ class Renderer:
             color = tuple(int(c * alpha) for c in p.color)
             draw.ellipse([p.x - size, p.y - size, p.x + size, p.y + size], fill=color)
 
-        # Ball body
-        cx, cy = ball.pos.x, ball.pos.y
-        r = ball.radius
-        ball_color = ball.color
+        cx, cy = int(ball.pos.x), int(ball.pos.y)
+        r = int(ball.radius)
 
-        # Outer glow
+        # Glow
         if self.style.get("glow_enabled", True):
             glow_radius = int(r * self.style.get("glow_radius_mult", 2.5))
             glow_img = Image.new("RGBA", (self.width, self.height), (0, 0, 0, 0))
@@ -142,11 +142,10 @@ class Renderer:
             glow_img = glow_img.filter(ImageFilter.GaussianBlur(radius=int(glow_radius * 0.3)))
             img = Image.alpha_composite(img.convert("RGBA"), glow_img).convert("RGB")
 
-        # Ball fill with gradient effect (simple radial)
-        r_int = int(r)
-        for i in range(r_int, 0, -1):
-            ratio = i / r_int
-            color = tuple(int(c * (0.4 + 0.6 * ratio)) for c in ball_color)
+        # Ball body
+        for i in range(r, 0, -1):
+            ratio = i / r
+            color = tuple(int(c * (0.4 + 0.6 * ratio)) for c in ball.color)
             draw.ellipse([cx - i, cy - i, cx + i, cy + i], fill=color)
 
         # Specular highlight
@@ -156,42 +155,134 @@ class Renderer:
         draw.ellipse([hl_x - hl_r, hl_y - hl_r, hl_x + hl_r, hl_y + hl_r],
                      fill=(255, 255, 255, 180))
 
-        # Collision flash
+        # Flash
         if flash_intensity > 0:
             flash = Image.new("RGB", (self.width, self.height), (255, 255, 255))
             img = Image.blend(img, flash, flash_intensity * 0.4)
 
-        # Vignette
         if self.style.get("vignette", True):
-            vig = self._vignette(self.width, self.height, self.style.get("vignette_strength", 0.4))
-            img = Image.blend(img, vig, 0.5)
+            img = self._apply_vignette(img)
 
         return img
 
-    def _vignette(self, w: int, h: int, strength: float) -> Image:
-        """Create a vignette overlay."""
-        img = Image.new("RGB", (w, h), (0, 0, 0))
+    # ─── DOT MODE ────────────────────────────────────────────────────────────
+
+    def _render_dot_frame(self, ball: Ball, flash_intensity: float = 0.0) -> Image:
+        """Ultra-minimal dot/line with fading trail."""
+        img = self.background.copy()
         draw = ImageDraw.Draw(img)
-        steps = 20
-        for i in range(steps, 0, -1):
-            alpha = (1 - i / steps) * strength
-            r_inner = 0
-            r_outer = int(math.sqrt(w**2 + h**2) * (i / steps))
-            overlay = Image.new("RGB", (w, h), (0, 0, 0))
-            overlay_draw = ImageDraw.Draw(overlay)
-            overlay_draw.ellipse([w//2 - r_outer, h//2 - r_outer,
-                                   w//2 + r_outer, h//2 + r_outer], fill=(255, 255, 255))
-            img = Image.blend(img, overlay, alpha)
+
+        dot_mode = self.style.get("dot_mode", True)
+        trail_color = self.style.get("dot_glow_color", (255, 255, 255))
+
+        # Fading trail
+        if len(ball.trail) > 1 and self.style.get("dot_trail", True):
+            for i in range(len(ball.trail) - 1):
+                alpha = i / len(ball.trail)
+                fade = self.style.get("dot_trail_fade", True)
+                if fade:
+                    r = int(trail_color[0] * alpha)
+                    g = int(trail_color[1] * alpha)
+                    b = int(trail_color[2] * alpha)
+                else:
+                    r, g, b = trail_color[:3]
+                width = max(1, int(alpha * 2))
+                p1 = (ball.trail[i].x, ball.trail[i].y)
+                p2 = (ball.trail[i+1].x, ball.trail[i+1].y)
+                draw.line([p1, p2], (r, g, b), width=width)
+
+        cx, cy = int(ball.pos.x), int(ball.pos.y)
+
+        if dot_mode == "line":
+            # Short line in velocity direction
+            line_len = self.style.get("line_length", 12)
+            angle = math.atan2(ball.vel.y, ball.vel.x)
+            mag = ball.vel.magnitude()
+            dx = math.cos(angle) * min(line_len, mag * 1.5)
+            dy = math.sin(angle) * min(line_len, mag * 1.5)
+
+            x1, y1 = cx - dx * 0.5, cy - dy * 0.5
+            x2, y2 = cx + dx * 0.5, cy + dy * 0.5
+            line_color = self.style.get("line_color", (255, 255, 255))
+
+            if self.style.get("line_glow", True):
+                glow_r = self.style.get("line_glow_radius", 6)
+                glow_color = self.style.get("line_glow_color", line_color)
+                for gr in range(glow_r, 0, -1):
+                    draw.line([x1, y1, x2, y2], glow_color[:3], width=gr + 1)
+
+            draw.line([x1, y1, x2, y2], line_color, width=2)
+
+        elif dot_mode == "stardust":
+            # Cluster of tiny dots
+            dot_color = self.style.get("dot_color", (255, 255, 255))
+            glow_color = self.style.get("dot_glow_color", dot_color)
+            count = self.style.get("dot_count", 3)
+            sizes = self.style.get("dot_size_range", [1, 3])
+
+            for i in range(count):
+                ox = math.cos(i * 2.1 + self.frame * 0.1) * ball.radius * 0.5
+                oy = math.sin(i * 2.1 + self.frame * 0.1) * ball.radius * 0.5
+                px, py = cx + ox, cy + oy
+                sz = sizes[0] + (sizes[1] - sizes[0]) * (i / count)
+
+                if self.style.get("dot_glow", True):
+                    for gr in range(self.style.get("dot_glow_radius", 5), 1, -1):
+                        draw.ellipse([px-gr, py-gr, px+gr, py+gr], fill=glow_color[:3])
+                draw.ellipse([px-sz, py-sz, px+sz, py+sz], fill=dot_color[:3])
+
+        else:
+            # Simple dot with glow
+            dot_size = self.style.get("dot_size", 2)
+            dot_color = self.style.get("dot_color", (255, 255, 255))
+            glow_color = self.style.get("dot_glow_color", dot_color)
+            glow_r = self.style.get("dot_glow_radius", 8)
+
+            if self.style.get("dot_glow", True):
+                for gr in range(glow_r, 1, -1):
+                    alpha = 1 - gr / glow_r
+                    gc = tuple(int(c * alpha) for c in glow_color[:3])
+                    draw.ellipse([cx-gr, cy-gr, cx+gr, cy+gr], fill=gc)
+
+            draw.ellipse([cx-dot_size, cy-dot_size, cx+dot_size, cy+dot_size],
+                         fill=dot_color[:3])
+
+        # Collision flash
+        if flash_intensity > 0 and self.style.get("flash_on_hit", True):
+            flash = Image.new("RGB", (self.width, self.height), (255, 255, 255))
+            img = Image.blend(img, flash, flash_intensity * 0.3)
+
+        if self.style.get("vignette", True):
+            img = self._apply_vignette(img)
+
         return img
+
+    # ─── SHARED ─────────────────────────────────────────────────────────────
+
+    def _apply_vignette(self, img: Image) -> Image:
+        """Apply subtle vignette overlay."""
+        w, h = self.width, self.height
+        strength = self.style.get("vignette_strength", 0.5)
+        bg = self.style.get("background", (10, 6, 18))
+
+        # Build radial gradient manually
+        vignette = Image.new("RGB", (w, h), bg)
+        vd = ImageDraw.Draw(vignette)
+        cx, cy = w // 2, h // 2
+        max_r = int(math.sqrt(w**2 + h**2))
+
+        for i in range(max_r, 0, -10):
+            alpha = (1 - i / max_r) * strength
+            color = tuple(int(c * alpha) for c in bg)
+            vd.ellipse([cx-i, cy-i, cx+i, cy+i], fill=color)
+
+        return Image.blend(img, vignette, 0.4)
 
     def handle_collision(self, collision: Collision):
-        """React to a collision: spawn particles + flash."""
-        color = self.particles.max_particles > 0 and collision.position or collision.position
-        self.particles.spawn(
-            collision.position.x,
-            collision.position.y,
-            collision.speed,
-            collision.surface_normal,
-            collision.velocity_before and (200, 200, 255) or (255, 200, 200),
-            count=self.style.get("particle_count", 8)
-        )
+        if self.style.get("particles_on_hit", True):
+            self.particles.spawn(
+                collision.position.x, collision.position.y,
+                collision.speed, collision.surface_normal,
+                (200, 200, 255),
+                count=self.style.get("particle_count", 8)
+            )

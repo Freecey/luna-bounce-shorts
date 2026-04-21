@@ -164,18 +164,27 @@ class Simulator:
 
 
 def render_scene(seed: int = None, style_name: str = "cosmic",
-                  width: int = SHORT_WIDTH, height: int = SHORT_HEIGHT,
-                  duration: int = DURATION_SECONDS, fps: int = FPS) -> str:
+                 width: int = SHORT_WIDTH, height: int = SHORT_HEIGHT,
+                 duration: int = DURATION_SECONDS, fps: int = FPS) -> str:
     """
     Main entry point: render a single scene.
     Returns path to the output MP4.
     """
     from styles.luna import get_style
+    from styles.luna_dot import get_dot_style
 
     if seed is None:
         seed = random.randint(0, 999999)
 
-    style = get_style(style_name)
+    # Try dot styles first, fall back to ball styles
+    style = get_dot_style(style_name)
+    if style is None or style == {}:
+        style = get_style(style_name)
+
+    # Ball radius adapts to dot mode
+    if style.get("dot_mode", False):
+        style["ball_radius_min"] = style.get("ball_radius_min", 8)
+        style["ball_radius_max"] = style.get("ball_radius_max", 15)
 
     config = SceneConfig(
         seed=seed,
@@ -194,10 +203,19 @@ def render_batch(count: int = 3, style_name: str = "cosmic",
                  width: int = SHORT_WIDTH, height: int = SHORT_HEIGHT) -> list[str]:
     """Render multiple variants."""
     from styles.luna import get_style
-    style = get_style(style_name)
+    from styles.luna_dot import get_dot_style
+
+    style = get_dot_style(style_name)
+    if style is None or style == {}:
+        style = get_style(style_name)
+
+    if style.get("dot_mode", False):
+        style["ball_radius_min"] = style.get("ball_radius_min", 8)
+        style["ball_radius_max"] = style.get("ball_radius_max", 15)
+
     outputs = []
 
-    print(f"\n🎬 BATCH RENDER: {count} videos in {style.get('name')}\n")
+    print(f"\n🎬 BATCH RENDER: {count} videos in {style.get('name', style_name)}\n")
 
     for i in range(count):
         print(f"\n--- Video {i+1}/{count} ---")
