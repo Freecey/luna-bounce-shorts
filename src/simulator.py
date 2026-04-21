@@ -38,6 +38,8 @@ class SceneConfig:
     arena_mechanic: str = "none"
     # Whether to spawn obstacles inside the arena
     obstacle_count: int = 0
+    # Number of final frames that fade to black (loop-friendly ending)
+    fade_out_frames: int = 45
 
     def __post_init__(self):
         if self.output_name is None:
@@ -137,7 +139,18 @@ class Simulator:
         os.makedirs(frames_dir, exist_ok=True)
 
         print(f"  📁 Saving {len(self.frames)} frames...")
+        # Apply fade-out to final frames (loop-friendly ending)
+        fade_frames = self.config.fade_out_frames
+        total = len(self.frames)
         for i, frame in enumerate(self.frames):
+            # Compute fade alpha for last fade_frames
+            fade_idx = i - (total - fade_frames)
+            if fade_idx >= 0:
+                # fade_idx goes 0 → fade_frames-1 (0 = start of fade, last = full black)
+                alpha = fade_idx / fade_frames  # 0.0 → 1.0
+                # Blend with pure black
+                black = Image.new("RGB", frame.size, (0, 0, 0))
+                frame = Image.blend(frame, black, alpha)
             frame.save(os.path.join(frames_dir, f"frame_{i:05d}.png"))
 
         # Generate audio
