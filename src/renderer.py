@@ -88,22 +88,28 @@ class Renderer:
             ring_color = tuple(min(255, c + 20) for c in bg)
             draw.ellipse([cx-r, cy-r, cx+r, cy+r], outline=ring_color, width=2)
 
-    def render_frame(self, ball: Ball, flash_intensity: float = 0.0) -> Image:
+    def render_frame(self, ball: Ball, flash_intensity: float = 0.0,
+                     arena=None) -> Image:
         """Route to the appropriate renderer based on mode."""
         self.frame += 1
         dot_mode = self.style.get("dot_mode", False)
 
         if dot_mode:
-            return self._render_dot_frame(ball, flash_intensity)
+            return self._render_dot_frame(ball, flash_intensity, arena)
         else:
-            return self._render_ball_frame(ball, flash_intensity)
+            return self._render_ball_frame(ball, flash_intensity, arena)
 
     # ─── BALL MODE ───────────────────────────────────────────────────────────
 
-    def _render_ball_frame(self, ball: Ball, flash_intensity: float = 0.0) -> Image:
+    def _render_ball_frame(self, ball: Ball, flash_intensity: float = 0.0,
+                          arena=None) -> Image:
         """Full glowing orb with particles."""
         img = self.background.copy()
         draw = ImageDraw.Draw(img)
+
+        # Arena boundaries and obstacles
+        if arena is not None:
+            img, draw = self._draw_arena(img, draw, arena)
 
         # Trails
         if len(ball.trail) > 1 and self.style.get("trail_enabled", True):
@@ -167,13 +173,18 @@ class Renderer:
 
     # ─── DOT MODE ────────────────────────────────────────────────────────────
 
-    def _render_dot_frame(self, ball: Ball, flash_intensity: float = 0.0) -> Image:
+    def _render_dot_frame(self, ball: Ball, flash_intensity: float = 0.0,
+                         arena=None) -> Image:
         """Ultra-minimal dot/line with fading trail."""
         img = self.background.copy()
         draw = ImageDraw.Draw(img)
 
         dot_mode = self.style.get("dot_mode", True)
         trail_color = self.style.get("dot_glow_color", (255, 255, 255))
+
+        # Arena boundaries and obstacles
+        if arena is not None:
+            img, draw = self._draw_arena(img, draw, arena)
 
         # Fading trail
         if len(ball.trail) > 1 and self.style.get("dot_trail", True):
@@ -258,6 +269,55 @@ class Renderer:
         return img
 
     # ─── SHARED ─────────────────────────────────────────────────────────────
+
+    def _draw_arena(self, img, draw, arena):
+        """
+        Draw arena boundaries and obstacles onto the image.
+        Returns updated (img, draw) tuple since rotating the canvas modifies them.
+        """
+        from arena import ArenaMechanic
+        bounds = arena.get_bounds()
+        bg = self.style.get("background", (10, 6, 18))
+
+        if arena.mechanic == ArenaMechanic.ROTATING:
+            # Rotate the canvas for the rotating frame effect
+            cx, cy = bounds.center()
+            angle = arena.get_rotation()
+            if abs(angle) > 0.001:
+                img = img.rotate(math.degrees(angle), center=(cx, cy), resample=Image.BICUBIC)
+                draw = ImageDraw.Draw(img)
+
+        # Draw arena boundary box
+        boundary_color = tuple(max(0, c - 20) for c in bg)
+        boundary_width = self.style.get("arena_boundary_width", 2)
+        draw.rectangle(
+            [bounds.left, bounds.top, bounds.right, bounds.bottom],
+            outline=boundary_color, width=boundary_width
+        )
+
+        # Draw corner brackets for a stylish arena frame
+        bracket_size = 30
+        bracket_color = tuple(min(255, c + 15) for c in boundary_color)
+        bw = boundary_width + 2
+
+        # Top-left
+        draw.line([(bounds.left, bounds.top + bracket_size), (bounds.left, bounds.top)], bracket_color, width=bw)
+        draw.line([(bounds.left, bounds.top), (bounds.left + bracket_size, bounds.top)], bracket_color, width=bw)
+        # Top-right
+        draw.line([(bounds.right - bracket_size, bounds.top), (bounds.right, bounds.top)], bracket_color, width=bw)
+        draw.line([(bounds.right, bounds.top), (bounds.right, bounds.top + bracket_size)], bracket_color, width=bw)
+        # Bottom-left
+        draw.line([(bounds.left, bounds.bottom - bracket_size), (bounds.left, bounds.bottom)], bracket_color, width=bw)
+        draw.line([(bounds.left, bounds.bottom), (bounds.left + bracket_size, bounds.bottom)], bracket_color, width=bw)
+        # Bottom-right
+        draw.line([(bounds.right - bracket_size, bounds.bottom), (bounds.right, bounds.bottom)], bracket_color, width=bw)
+        draw.line([(bounds.right, bounds.bottom), (bounds.right, bounds.bottom - bracket_size)], bracket_color, width=bw)
+
+        # Draw obstacles
+        for obs in arena.obstacles:
+            obs.draw(draw, arena.frame)
+
+        return img, draw
 
     def _apply_vignette(self, img: Image) -> Image:
         """Apply subtle vignette overlay."""

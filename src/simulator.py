@@ -13,6 +13,7 @@ from PIL import Image
 from ball import Ball, create_ball
 from renderer import Renderer
 from audio import BounceAudioTrack
+from arena import Arena, ArenaMechanic, create_arena
 
 
 # 9:16 vertical format for Shorts
@@ -33,10 +34,21 @@ class SceneConfig:
     duration: int = DURATION_SECONDS
     output_dir: str = "./exports"
     output_name: str = None
+    # Arena mechanic: "none", "shrinking", "moving_walls", "rotating"
+    arena_mechanic: str = "none"
+    # Whether to spawn obstacles inside the arena
+    obstacle_count: int = 0
 
     def __post_init__(self):
         if self.output_name is None:
             self.output_name = f"luna_bounce_{self.seed}"
+
+    @property
+    def mechanic_enum(self) -> ArenaMechanic:
+        try:
+            return ArenaMechanic(self.arena_mechanic)
+        except ValueError:
+            return ArenaMechanic.NONE
 
 
 class Simulator:
@@ -48,6 +60,16 @@ class Simulator:
     def __init__(self, config: SceneConfig):
         self.config = config
         self.rng = random.Random(config.seed)
+
+        # Initialize arena
+        style_with_obstacles = dict(config.style, obstacle_count=config.obstacle_count)
+        self.arena = create_arena(
+            width=config.width,
+            height=config.height,
+            mechanic=config.mechanic_enum,
+            seed=config.seed,
+            style=style_with_obstacles,
+        )
 
         # Initialize ball
         self.ball = create_ball(config.seed, config.width, config.height, config.style)
@@ -67,8 +89,12 @@ class Simulator:
         print(f"  🎲 Seed: {self.config.seed}")
 
         for frame_idx in range(self.total_frames):
+            # Advance arena (moves obstacles, updates mechanic state)
+            self.arena.advance()
+
             # Physics step
-            collisions = self.ball.update(self.config.width, self.config.height)
+            collisions = self.ball.update(self.config.width, self.config.height,
+                                          arena=self.arena)
 
             # Handle collisions
             flash = 0.0
@@ -87,7 +113,8 @@ class Simulator:
                 flash = min(1.0, col.speed / 15)
 
             # Render frame
-            img = self.renderer.render_frame(self.ball, flash_intensity=flash)
+            img = self.renderer.render_frame(self.ball, flash_intensity=flash,
+                                            arena=self.arena)
             self.frames.append(img)
 
             if frame_idx % (self.total_frames // 4) == 0:
@@ -165,26 +192,46 @@ class Simulator:
 
 def render_scene(seed: int = None, style_name: str = "cosmic",
                  width: int = SHORT_WIDTH, height: int = SHORT_HEIGHT,
-                 duration: int = DURATION_SECONDS, fps: int = FPS) -> str:
+                 duration: int = DURATION_SECONDS, fps: int = FPS,
+                 arena_mechanic: str = "none",
+                 obstacle_count: int = 0) -> str:
     """
     Main entry point: render a single scene.
     Returns path to the output MP4.
     """
     from styles.luna import get_style
     from styles.luna_dot import get_dot_style
+    from styles.microcosm import get_micro_style
 
     if seed is None:
         seed = random.randint(0, 999999)
 
-    # Try dot styles first, fall back to ball styles
-    style = get_dot_style(style_name)
+    style = {}
+
+    # Resolve style: microcosm > dot > ball
+    if style_name.startswith("micro_"):
+        style = get_micro_style(style_name.replace("micro_", ""))
+    elif style_name.startswith("dot_"):
+        style = get_dot_style(style_name.replace("dot_", ""))
+    else:
+        style = get_dot_style(style_name)
+        if style is None or style == {}:
+            style = get_style(style_name)
+
     if style is None or style == {}:
-        style = get_style(style_name)
+        print(f"  ⚠️  Unknown style '{style_name}', using cosmic")
+        style = get_style("cosmic")
 
     # Ball radius adapts to dot mode
     if style.get("dot_mode", False):
         style["ball_radius_min"] = style.get("ball_radius_min", 8)
         style["ball_radius_max"] = style.get("ball_radius_max", 15)
+
+    # Obstacle count from style, overridable via parameter
+    style_obstacle_count = style.get("obstacle_count", obstacle_count)
+    # Arena mechanic from style
+    if arena_mechanic == "none":
+        arena_mechanic = style.get("arena_mechanic", "none")
 
     config = SceneConfig(
         seed=seed,
@@ -193,6 +240,8 @@ def render_scene(seed: int = None, style_name: str = "cosmic",
         height=height,
         fps=fps,
         duration=duration,
+        arena_mechanic=arena_mechanic,
+        obstacle_count=style_obstacle_count,
     )
 
     sim = Simulator(config)
@@ -200,14 +249,28 @@ def render_scene(seed: int = None, style_name: str = "cosmic",
 
 
 def render_batch(count: int = 3, style_name: str = "cosmic",
-                 width: int = SHORT_WIDTH, height: int = SHORT_HEIGHT) -> list[str]:
+                 width: int = SHORT_WIDTH, height: int = SHORT_HEIGHT,
+                 arena_mechanic: str = "none",
+                 obstacle_count: int = 0) -> list[str]:
     """Render multiple variants."""
     from styles.luna import get_style
     from styles.luna_dot import get_dot_style
+    from styles.microcosm import get_micro_style
 
-    style = get_dot_style(style_name)
+    style = {}
+
+    # Resolve style: microcosm > dot > ball
+    if style_name.startswith("micro_"):
+        style = get_micro_style(style_name.replace("micro_", ""))
+    elif style_name.startswith("dot_"):
+        style = get_dot_style(style_name.replace("dot_", ""))
+    else:
+        style = get_dot_style(style_name)
+        if style is None or style == {}:
+            style = get_style(style_name)
+
     if style is None or style == {}:
-        style = get_style(style_name)
+        style = get_style("cosmic")
 
     if style.get("dot_mode", False):
         style["ball_radius_min"] = style.get("ball_radius_min", 8)
@@ -225,6 +288,8 @@ def render_batch(count: int = 3, style_name: str = "cosmic",
             style=style,
             width=width,
             height=height,
+            arena_mechanic=arena_mechanic,
+            obstacle_count=obstacle_count,
         )
         sim = Simulator(config)
         out = sim.run()
