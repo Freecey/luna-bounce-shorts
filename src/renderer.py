@@ -88,8 +88,8 @@ class Renderer:
             ring_color = tuple(min(255, c + 20) for c in bg)
             draw.ellipse([cx-r, cy-r, cx+r, cy+r], outline=ring_color, width=2)
 
-    def render_frame(self, ball: Ball, flash_intensity: float = 0.0,
-                     arena=None) -> Image:
+    def render_frame(self, ball, flash_intensity: float = 0.0,
+                     arena=None, extra_balls: list = None) -> Image:
         """Route to the appropriate renderer based on mode."""
         self.frame += 1
         dot_mode = self.style.get("dot_mode", False)
@@ -97,13 +97,14 @@ class Renderer:
         if dot_mode:
             return self._render_dot_frame(ball, flash_intensity, arena)
         else:
-            return self._render_ball_frame(ball, flash_intensity, arena)
+            return self._render_ball_frame(ball, flash_intensity, arena,
+                                           extra_balls=extra_balls)
 
     # ─── BALL MODE ───────────────────────────────────────────────────────────
 
     def _render_ball_frame(self, ball: Ball, flash_intensity: float = 0.0,
-                          arena=None) -> Image:
-        """Full glowing orb with particles."""
+                          arena=None, extra_balls: list = None) -> Image:
+        """Full glowing orb with particles. Supports multiple balls."""
         img = self.background.copy()
         draw = ImageDraw.Draw(img)
 
@@ -111,18 +112,24 @@ class Renderer:
         if arena is not None:
             img, draw = self._draw_arena(img, draw, arena)
 
-        # Trails
-        if len(ball.trail) > 1 and self.style.get("trail_enabled", True):
-            trail_color = ball.glow_color
-            for i in range(len(ball.trail) - 1):
-                alpha = (i / len(ball.trail)) * 0.6
-                r = int(trail_color[0] * alpha)
-                g = int(trail_color[1] * alpha)
-                b = int(trail_color[2] * alpha)
-                width = max(1, int(ball.radius * 0.3 * alpha))
-                p1 = (ball.trail[i].x, ball.trail[i].y)
-                p2 = (ball.trail[i+1].x, ball.trail[i+1].y)
-                draw.line([p1, p2], (r, g, b), width=width)
+        # Collect all balls to render
+        all_balls = [ball]
+        if extra_balls:
+            all_balls.extend(extra_balls)
+
+        for b in all_balls:
+            # Trails
+            if len(b.trail) > 1 and self.style.get("trail_enabled", True):
+                trail_color = b.glow_color
+                for i in range(len(b.trail) - 1):
+                    alpha = (i / len(b.trail)) * 0.6
+                    r = int(trail_color[0] * alpha)
+                    g = int(trail_color[1] * alpha)
+                    bl = int(trail_color[2] * alpha)
+                    width = max(1, int(b.radius * 0.3 * alpha))
+                    p1 = (b.trail[i].x, b.trail[i].y)
+                    p2 = (b.trail[i+1].x, b.trail[i+1].y)
+                    draw.line([p1, p2], (r, g, bl), width=width)
 
         # Particles
         self.particles.update()
@@ -132,39 +139,41 @@ class Renderer:
             color = tuple(int(c * alpha) for c in p.color)
             draw.ellipse([p.x - size, p.y - size, p.x + size, p.y + size], fill=color)
 
-        cx, cy = int(ball.pos.x), int(ball.pos.y)
-        r = int(ball.radius)
+        for b in all_balls:
+            cx, cy = int(b.pos.x), int(b.pos.y)
+            r = int(b.radius)
 
-        # Glow
-        if self.style.get("glow_enabled", True):
-            glow_radius = int(r * self.style.get("glow_radius_mult", 2.5))
-            glow_img = Image.new("RGBA", (self.width, self.height), (0, 0, 0, 0))
-            glow_draw = ImageDraw.Draw(glow_img)
-            for i in range(3):
-                g_alpha = int(80 - i * 20)
-                g_r = int(glow_radius + i * r * 0.5)
-                glow_color = (*ball.glow_color[:3], g_alpha)
-                glow_draw.ellipse([cx - g_r, cy - g_r, cx + g_r, cy + g_r], fill=glow_color)
-            glow_img = glow_img.filter(ImageFilter.GaussianBlur(radius=int(glow_radius * 0.3)))
-            img = Image.alpha_composite(img.convert("RGBA"), glow_img).convert("RGB")
+            # Glow
+            if self.style.get("glow_enabled", True):
+                glow_radius = int(r * self.style.get("glow_radius_mult", 2.5))
+                glow_img = Image.new("RGBA", (self.width, self.height), (0, 0, 0, 0))
+                glow_draw = ImageDraw.Draw(glow_img)
+                for i in range(3):
+                    g_alpha = int(80 - i * 20)
+                    g_r = int(glow_radius + i * r * 0.5)
+                    glow_color = (*b.glow_color[:3], g_alpha)
+                    glow_draw.ellipse([cx - g_r, cy - g_r, cx + g_r, cy + g_r], fill=glow_color)
+                glow_img = glow_img.filter(ImageFilter.GaussianBlur(radius=int(glow_radius * 0.3)))
+                img = Image.alpha_composite(img.convert("RGBA"), glow_img).convert("RGB")
+                draw = ImageDraw.Draw(img)
 
-        # Ball body
-        for i in range(r, 0, -1):
-            ratio = i / r
-            color = tuple(int(c * (0.4 + 0.6 * ratio)) for c in ball.color)
-            draw.ellipse([cx - i, cy - i, cx + i, cy + i], fill=color)
+            # Ball body
+            for i in range(r, 0, -1):
+                ratio = i / r
+                color = tuple(int(c * (0.4 + 0.6 * ratio)) for c in b.color)
+                draw.ellipse([cx - i, cy - i, cx + i, cy + i], fill=color)
 
-        # Specular highlight
-        hl_x = cx - int(r * 0.3)
-        hl_y = cy - int(r * 0.3)
-        hl_r = max(2, int(r * 0.25))
-        draw.ellipse([hl_x - hl_r, hl_y - hl_r, hl_x + hl_r, hl_y + hl_r],
-                     fill=(255, 255, 255, 180))
+            # Specular highlight
+            hl_x = cx - int(r * 0.3)
+            hl_y = cy - int(r * 0.3)
+            hl_r = max(2, int(r * 0.25))
+            draw.ellipse([hl_x - hl_r, hl_y - hl_r, hl_x + hl_r, hl_y + hl_r],
+                         fill=(255, 255, 255, 180))
 
         # Flash
         if flash_intensity > 0:
             flash = Image.new("RGB", (self.width, self.height), (255, 255, 255))
-            img = Image.blend(img, flash, flash_intensity * 0.4)
+            img = Image.blend(img, flash, flash_intensity * 0.15)
 
         if self.style.get("vignette", True):
             img = self._apply_vignette(img)
@@ -286,6 +295,66 @@ class Renderer:
             if abs(angle) > 0.001:
                 img = img.rotate(math.degrees(angle), center=(cx, cy), resample=Image.BICUBIC)
                 draw = ImageDraw.Draw(img)
+
+        if arena.mechanic == ArenaMechanic.CIRCULAR:
+            # Draw circular arena
+            cx, cy = arena.get_circle_center()
+            r = arena.get_circle_radius()
+            circle_color = arena.circle_color
+            circle_rotation = arena.get_circle_rotation()
+            circle_width = self.style.get("circle_line_width", 3)
+
+            # Glow ring
+            glow_mult = self.style.get("circle_glow_mult", 3)
+            glow_color = self.style.get("circle_glow_color", circle_color)
+            for gr in range(int(r + 15 * glow_mult), int(r), -2):
+                alpha = max(0, 1 - (gr - r) / (15 * glow_mult))
+                gc = tuple(int(c * alpha * 0.3) for c in glow_color[:3])
+                draw.ellipse([cx - gr, cy - gr, cx + gr, cy + gr], outline=gc, width=2)
+
+            # Draw circle as arcs with gaps
+            gap_count = arena.circle_gap_count
+            gap_size = arena.circle_gap_size  # radians
+
+            if gap_count > 0:
+                gap_spacing = 2 * math.pi / gap_count
+                # Draw arcs between gaps
+                for i in range(gap_count):
+                    arc_start = circle_rotation + i * gap_spacing + gap_size / 2
+                    arc_end = circle_rotation + (i + 1) * gap_spacing - gap_size / 2
+                    # Convert to degrees (PIL uses degrees, 0=3 o'clock, counter-clockwise)
+                    start_deg = -math.degrees(arc_start)
+                    end_deg = -math.degrees(arc_end)
+                    # Draw arc as series of small lines for precision
+                    steps = max(10, int(abs(arc_end - arc_start) * r / 5))
+                    points = []
+                    for s in range(steps + 1):
+                        a = arc_start + (arc_end - arc_start) * s / steps
+                        px = cx + math.cos(a) * r
+                        py = cy + math.sin(a) * r
+                        points.append((px, py))
+                    if len(points) > 1:
+                        draw.line(points, fill=circle_color, width=circle_width)
+            else:
+                # Full circle (no gaps)
+                draw.ellipse(
+                    [cx - r, cy - r, cx + r, cy + r],
+                    outline=circle_color, width=circle_width
+                )
+
+            # Rotating tick marks for visual spin effect
+            tick_count = self.style.get("circle_tick_count", 8)
+            tick_length = self.style.get("circle_tick_length", 15)
+            tick_color = self.style.get("circle_tick_color", circle_color)
+            for i in range(tick_count):
+                a = circle_rotation + (2 * math.pi * i / tick_count)
+                x1 = cx + math.cos(a) * (r - tick_length)
+                y1 = cy + math.sin(a) * (r - tick_length)
+                x2 = cx + math.cos(a) * r
+                y2 = cy + math.sin(a) * r
+                draw.line([x1, y1, x2, y2], tick_color, width=2)
+
+            return img, draw
 
         # Draw arena boundary box
         boundary_color = tuple(max(0, c - 20) for c in bg)

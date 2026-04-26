@@ -10,7 +10,7 @@ import uuid
 from dataclasses import dataclass
 from PIL import Image
 
-from ball import Ball, create_ball
+from ball import Ball, create_ball, spawn_ball_at_center
 from renderer import Renderer
 from audio import BounceAudioTrack
 from arena import Arena, ArenaMechanic, create_arena
@@ -73,10 +73,17 @@ class Simulator:
             style=style_with_obstacles,
         )
 
-        # Initialize ball
-        self.ball = create_ball(config.seed, config.width, config.height, config.style)
+        # Initialize ball — center_start for circular arena
+        center_start = config.mechanic_enum == ArenaMechanic.CIRCULAR
+        self.ball = create_ball(config.seed, config.width, config.height,
+                                config.style, center_start=center_start)
         self.renderer = Renderer(config.width, config.height, config.style)
         self.audio = BounceAudioTrack()
+
+        # Extra balls for circular mode (spawned on collision)
+        self.extra_balls: list[Ball] = []
+        self.max_balls = config.style.get("max_balls", 200)
+        self.spawn_rng = random.Random(config.seed + 999)
 
         self.frames: list[Image.Image] = []
         self.total_frames = config.fps * config.duration
@@ -94,11 +101,17 @@ class Simulator:
             # Advance arena (moves obstacles, updates mechanic state)
             self.arena.advance()
 
-            # Physics step
+            # Physics step — main ball
             collisions = self.ball.update(self.config.width, self.config.height,
                                           arena=self.arena)
 
-            # Handle collisions
+            # Physics step — extra balls
+            for eb in self.extra_balls:
+                eb_cols = eb.update(self.config.width, self.config.height,
+                                    arena=self.arena)
+                collisions.extend(eb_cols)
+
+            # Handle collisions + spawn new balls on circle hit
             flash = 0.0
             for col in collisions:
                 self.audio.add_bounce(
@@ -112,11 +125,21 @@ class Simulator:
                     col.velocity_before and (200, 200, 255) or (255, 200, 200),
                     count=self.config.style.get("particle_count", 8)
                 )
-                flash = min(1.0, col.speed / 15)
+                flash = min(0.15, col.speed / 30)
 
-            # Render frame
+                # Spawn new ball at center on circle collision (circular mode)
+                if (self.config.mechanic_enum == ArenaMechanic.CIRCULAR
+                        and len(self.extra_balls) < self.max_balls - 1):
+                    new_ball = spawn_ball_at_center(
+                        self.config.width, self.config.height,
+                        self.config.style, rng=self.spawn_rng
+                    )
+                    self.extra_balls.append(new_ball)
+
+            # Render frame (main ball + extra balls)
             img = self.renderer.render_frame(self.ball, flash_intensity=flash,
-                                            arena=self.arena)
+                                            arena=self.arena,
+                                            extra_balls=self.extra_balls)
             self.frames.append(img)
 
             if frame_idx % (self.total_frames // 4) == 0:

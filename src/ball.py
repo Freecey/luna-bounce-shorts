@@ -110,81 +110,84 @@ class Ball:
         if arena is not None:
             bounds = arena.get_bounds()
 
-            if arena.mechanic == ArenaMechanic.ROTATING:
-                # Ball lives in rotated space — transform to arena local space
-                cx, cy = bounds.center()
-                angle = arena.get_rotation()
-                local_pos = self.pos.rotate(-angle)
-                local_pos = Vector2(local_pos.x + cx, local_pos.y + cy)
+            if arena.mechanic == ArenaMechanic.CIRCULAR:
+                new_collisions = self._collide_circular(arena, frame)
+
             else:
-                local_pos = self.pos
-
-            speed = self.vel.magnitude()
-
-            # Wall collisions
-            # Left
-            if local_pos.x - self.radius < bounds.left:
-                self.pos.x = bounds.left + self.radius
                 if arena.mechanic == ArenaMechanic.ROTATING:
+                    cx, cy = bounds.center()
                     angle = arena.get_rotation()
-                    normal = Vector2(1, 0).rotate(angle)
+                    local_pos = self.pos.rotate(-angle)
+                    local_pos = Vector2(local_pos.x + cx, local_pos.y + cy)
                 else:
-                    normal = Vector2(1, 0)
-                if speed > 0.5:
-                    new_collisions.append(Collision(frame, Vector2(self.pos.x, self.pos.y),
-                                                     Vector2(self.vel.x, self.vel.y), speed, normal))
-                self.vel = self.vel.reflect(normal, self.bounce)
+                    local_pos = self.pos
 
-            # Right
-            if local_pos.x + self.radius > bounds.right:
-                self.pos.x = bounds.right - self.radius
-                if arena.mechanic == ArenaMechanic.ROTATING:
-                    angle = arena.get_rotation()
-                    normal = Vector2(-1, 0).rotate(angle)
-                else:
-                    normal = Vector2(-1, 0)
-                if speed > 0.5:
-                    new_collisions.append(Collision(frame, Vector2(self.pos.x, self.pos.y),
-                                                     Vector2(self.vel.x, self.vel.y), speed, normal))
-                self.vel = self.vel.reflect(normal, self.bounce)
+                speed = self.vel.magnitude()
 
-            # Top
-            if local_pos.y - self.radius < bounds.top:
-                self.pos.y = bounds.top + self.radius
-                if arena.mechanic == ArenaMechanic.ROTATING:
-                    angle = arena.get_rotation()
-                    normal = Vector2(0, 1).rotate(angle)
-                else:
-                    normal = Vector2(0, 1)
-                if speed > 0.5:
-                    new_collisions.append(Collision(frame, Vector2(self.pos.x, self.pos.y),
-                                                     Vector2(self.vel.x, self.vel.y), speed, normal))
-                self.vel = self.vel.reflect(normal, self.bounce)
-
-            # Bottom
-            if local_pos.y + self.radius > bounds.bottom:
-                self.pos.y = bounds.bottom - self.radius
-                if arena.mechanic == ArenaMechanic.ROTATING:
-                    angle = arena.get_rotation()
-                    normal = Vector2(0, -1).rotate(angle)
-                else:
-                    normal = Vector2(0, -1)
-                if speed > 0.5:
-                    new_collisions.append(Collision(frame, Vector2(self.pos.x, self.pos.y),
-                                                     Vector2(self.vel.x, self.vel.y), speed, normal))
-                self.vel = self.vel.reflect(normal, self.bounce)
-
-            # Obstacle collisions
-            for obs in arena.obstacles:
-                result = obs.collision_test(self.pos, self.radius)
-                if result is not None:
-                    normal, depth = result
-                    self.pos = self.pos + normal * depth
-                    speed = self.vel.magnitude()
+                # Wall collisions
+                # Left
+                if local_pos.x - self.radius < bounds.left:
+                    self.pos.x = bounds.left + self.radius
+                    if arena.mechanic == ArenaMechanic.ROTATING:
+                        angle = arena.get_rotation()
+                        normal = Vector2(1, 0).rotate(angle)
+                    else:
+                        normal = Vector2(1, 0)
                     if speed > 0.5:
                         new_collisions.append(Collision(frame, Vector2(self.pos.x, self.pos.y),
                                                          Vector2(self.vel.x, self.vel.y), speed, normal))
                     self.vel = self.vel.reflect(normal, self.bounce)
+
+                # Right
+                if local_pos.x + self.radius > bounds.right:
+                    self.pos.x = bounds.right - self.radius
+                    if arena.mechanic == ArenaMechanic.ROTATING:
+                        angle = arena.get_rotation()
+                        normal = Vector2(-1, 0).rotate(angle)
+                    else:
+                        normal = Vector2(-1, 0)
+                    if speed > 0.5:
+                        new_collisions.append(Collision(frame, Vector2(self.pos.x, self.pos.y),
+                                                         Vector2(self.vel.x, self.vel.y), speed, normal))
+                    self.vel = self.vel.reflect(normal, self.bounce)
+
+                # Top
+                if local_pos.y - self.radius < bounds.top:
+                    self.pos.y = bounds.top + self.radius
+                    if arena.mechanic == ArenaMechanic.ROTATING:
+                        angle = arena.get_rotation()
+                        normal = Vector2(0, 1).rotate(angle)
+                    else:
+                        normal = Vector2(0, 1)
+                    if speed > 0.5:
+                        new_collisions.append(Collision(frame, Vector2(self.pos.x, self.pos.y),
+                                                         Vector2(self.vel.x, self.vel.y), speed, normal))
+                    self.vel = self.vel.reflect(normal, self.bounce)
+
+                # Bottom
+                if local_pos.y + self.radius > bounds.bottom:
+                    self.pos.y = bounds.bottom - self.radius
+                    if arena.mechanic == ArenaMechanic.ROTATING:
+                        angle = arena.get_rotation()
+                        normal = Vector2(0, -1).rotate(angle)
+                    else:
+                        normal = Vector2(0, -1)
+                    if speed > 0.5:
+                        new_collisions.append(Collision(frame, Vector2(self.pos.x, self.pos.y),
+                                                         Vector2(self.vel.x, self.vel.y), speed, normal))
+                    self.vel = self.vel.reflect(normal, self.bounce)
+
+                # Obstacle collisions
+                for obs in arena.obstacles:
+                    result = obs.collision_test(self.pos, self.radius)
+                    if result is not None:
+                        normal, depth = result
+                        self.pos = self.pos + normal * depth
+                        speed = self.vel.magnitude()
+                        if speed > 0.5:
+                            new_collisions.append(Collision(frame, Vector2(self.pos.x, self.pos.y),
+                                                             Vector2(self.vel.x, self.vel.y), speed, normal))
+                        self.vel = self.vel.reflect(normal, self.bounce)
 
         else:
             # ── Legacy static boundary collision ───────────────────────────────
@@ -227,14 +230,49 @@ class Ball:
         self.collisions.extend(new_collisions)
         return new_collisions
 
+    def _collide_circular(self, arena, frame: int) -> List[Collision]:
+        """Handle collision with circular arena boundary."""
+        collisions = []
+        cx, cy = arena.get_circle_center()
+        arena_r = arena.get_circle_radius()
+        dx = self.pos.x - cx
+        dy = self.pos.y - cy
+        dist = math.sqrt(dx * dx + dy * dy)
 
-def create_ball(seed: int, width: int, height: int, style: dict) -> Ball:
+        if dist + self.radius > arena_r and dist > 0:
+            # Check if ball is in a gap — if so, let it pass through
+            if arena.is_in_gap(self.pos):
+                return collisions
+
+            normal = Vector2(dx / dist, dy / dist)
+            self.pos.x = cx + normal.x * (arena_r - self.radius - 0.5)
+            self.pos.y = cy + normal.y * (arena_r - self.radius - 0.5)
+            speed = self.vel.magnitude()
+            vel_dot_normal = self.vel.x * normal.x + self.vel.y * normal.y
+            if vel_dot_normal > 0.5:
+                collisions.append(Collision(
+                    frame, Vector2(self.pos.x, self.pos.y),
+                    Vector2(self.vel.x, self.vel.y), speed, normal
+                ))
+            self.vel = self.vel.reflect(normal, self.bounce)
+
+        return collisions
+
+
+def create_ball(seed: int, width: int, height: int, style: dict,
+                center_start: bool = False) -> Ball:
     """Create a ball from a seed for reproducible randomness."""
     rng = random.Random(seed)
 
     radius = rng.uniform(style.get("ball_radius_min", 15), style.get("ball_radius_max", 30))
-    start_x = rng.uniform(width * 0.2, width * 0.8)
-    start_y = rng.uniform(height * 0.2, height * 0.5)
+
+    if center_start:
+        start_x = width * 0.5
+        start_y = height * 0.5
+    else:
+        start_x = rng.uniform(width * 0.2, width * 0.8)
+        start_y = rng.uniform(height * 0.2, height * 0.5)
+
     speed = rng.uniform(style.get("speed_min", 5), style.get("speed_max", 12))
     angle = rng.uniform(0, 2 * math.pi)
 
@@ -251,6 +289,51 @@ def create_ball(seed: int, width: int, height: int, style: dict) -> Ball:
         gravity=style.get("gravity", 0.3),
     )
     return ball
+
+
+def spawn_ball_at_center(width: int, height: int, style: dict,
+                         rng: random.Random = None) -> Ball:
+    """Spawn a ball at the center with a random color."""
+    if rng is None:
+        rng = random.Random()
+
+    radius = rng.uniform(style.get("ball_radius_min", 15), style.get("ball_radius_max", 30))
+    speed = rng.uniform(style.get("speed_min", 5), style.get("speed_max", 12))
+    angle = rng.uniform(0, 2 * math.pi)
+
+    hue = rng.uniform(0, 360)
+    color = _hsv_to_rgb(hue, 0.7, 1.0)
+    glow_color = _hsv_to_rgb(hue, 0.5, 1.0)
+
+    return Ball(
+        pos=Vector2(width * 0.5, height * 0.5),
+        vel=Vector2(math.cos(angle) * speed, math.sin(angle) * speed - 2),
+        radius=radius,
+        color=color,
+        glow_color=glow_color,
+        bounce=style.get("bounce", 0.85),
+        gravity=style.get("gravity", 0.3),
+    )
+
+
+def _hsv_to_rgb(h: float, s: float, v: float) -> Tuple[int, int, int]:
+    """Convert HSV (h: 0-360, s: 0-1, v: 0-1) to RGB tuple."""
+    c = v * s
+    x = c * (1 - abs((h / 60) % 2 - 1))
+    m = v - c
+    if h < 60:
+        r, g, b = c, x, 0
+    elif h < 120:
+        r, g, b = x, c, 0
+    elif h < 180:
+        r, g, b = 0, c, x
+    elif h < 240:
+        r, g, b = 0, x, c
+    elif h < 300:
+        r, g, b = x, 0, c
+    else:
+        r, g, b = c, 0, x
+    return (int((r + m) * 255), int((g + m) * 255), int((b + m) * 255))
 
 
 @dataclass

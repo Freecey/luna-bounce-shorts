@@ -365,6 +365,75 @@ MICRO_MULTI = {
 
 
 # =============================================================================
+# ORBIT — Ball trapped inside a spinning colored circle
+# =============================================================================
+MICRO_ORBIT = {
+    "name": "Micro Orbit",
+    "description": "Une lumière prisonnière d'un cercle qui tourne sans fin",
+
+    # Background
+    "background": (4, 4, 14),                  # Near-black deep space
+    "background_gradient": True,
+
+    # Arena behavior
+    "arena_mode": "circular",
+    "arena_mechanic": "circular",
+
+    # Circular arena params
+    "circle_radius": 280,                      # Pixel radius (will be clamped to min(w,h)*0.35)
+    "circle_color": (80, 140, 255),             # Spinning blue ring
+    "circle_glow_color": (60, 120, 255),
+    "circle_line_width": 3,
+    "circle_rotation_speed": 0.04,              # Visual spin speed (radians/frame)
+    "circle_pulse_speed": 0.015,                # Subtle breathing
+    "circle_pulse_amplitude": 8.0,
+    "circle_tick_count": 12,                    # Rotating tick marks
+    "circle_tick_length": 18,
+    "circle_tick_color": (100, 160, 255),
+    "circle_glow_mult": 3,
+    "circle_gap_count": 3,                      # 3 small openings
+    "circle_gap_size": 0.18,                    # ~10° each opening
+
+    # Ball — starts at center
+    "center_start": True,
+    "colors": [
+        (255, 240, 200),                        # Warm light
+        (255, 200, 100),                        # Amber
+        (255, 255, 220),                        # Soft white
+    ],
+    "glow_color": (255, 220, 150),              # Warm golden glow
+    "glow_enabled": True,
+    "glow_radius_mult": 3.0,
+    "ball_radius_min": 14,
+    "ball_radius_max": 20,
+    "bounce": 0.92,
+    "gravity": 0.25,
+
+    # Trail
+    "trail_enabled": True,
+    "trail_color": (255, 210, 140),
+
+    # Particles
+    "particle_count": 12,
+    "particle_color": (255, 200, 120),
+
+    # Visual elements
+    "grid_enabled": False,
+    "center_ring": False,
+    "stars_enabled": False,
+
+    # Post effects
+    "vignette": True,
+    "vignette_strength": 0.55,
+    "bloom": True,
+
+    # Physics
+    "speed_min": 8,
+    "speed_max": 16,
+}
+
+
+# =============================================================================
 # Style lookup functions
 # =============================================================================
 
@@ -377,6 +446,7 @@ def get_micro_style(name: str):
         "spiral": MICRO_SPIRAL,
         "obstacle": MICRO_OBSTACLE,
         "multi": MICRO_MULTI,
+        "orbit": MICRO_ORBIT,
     }
     return styles.get(name.lower(), MICRO_ESCAPE)
 
@@ -390,4 +460,5 @@ def list_micro_styles():
         ("spiral", MICRO_SPIRAL["name"], MICRO_SPIRAL["description"]),
         ("obstacle", MICRO_OBSTACLE["name"], MICRO_OBSTACLE["description"]),
         ("multi", MICRO_MULTI["name"], MICRO_MULTI["description"]),
+        ("orbit", MICRO_ORBIT["name"], MICRO_ORBIT["description"]),
     ]

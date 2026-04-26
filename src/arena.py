@@ -20,6 +20,7 @@ class ArenaMechanic(Enum):
     SHRINKING = "shrinking"
     MOVING_WALLS = "moving_walls"
     ROTATING = "rotating"
+    CIRCULAR = "circular"
 
 
 @dataclass
@@ -200,6 +201,15 @@ class Arena:
     rotation_speed: float = 0.008  # radians per frame
     max_rotation: float = math.pi / 6  # ±30°
 
+    # Circular arena params
+    circle_radius: float = 0.0
+    circle_color: Tuple[int, int, int] = (100, 100, 255)
+    circle_rotation_speed: float = 0.03  # radians per frame (visual spin)
+    circle_pulse_speed: float = 0.02
+    circle_pulse_amplitude: float = 0.0
+    circle_gap_count: int = 0             # Number of gaps in the circle
+    circle_gap_size: float = 0.15         # Gap size in radians (~8.5° each)
+
     def _static_bounds(self) -> ArenaBounds:
         return ArenaBounds(left=0.0, right=float(self.width),
                            top=0.0, bottom=float(self.height))
@@ -240,6 +250,17 @@ class Arena:
         # and handle wall collisions in rotated space.
         return self._static_bounds()
 
+    def _circular_bounds(self) -> ArenaBounds:
+        cx, cy = self.width * 0.5, self.height * 0.5
+        pulse = math.sin(self.frame * self.circle_pulse_speed) * self.circle_pulse_amplitude
+        r = self.circle_radius + pulse
+        return ArenaBounds(
+            left=cx - r,
+            right=cx + r,
+            top=cy - r,
+            bottom=cy + r
+        )
+
     def get_bounds(self) -> ArenaBounds:
         if self.mechanic == ArenaMechanic.SHRINKING:
             return self._shrinking_bounds()
@@ -247,6 +268,8 @@ class Arena:
             return self._moving_walls_bounds()
         elif self.mechanic == ArenaMechanic.ROTATING:
             return self._rotating_bounds()
+        elif self.mechanic == ArenaMechanic.CIRCULAR:
+            return self._circular_bounds()
         return self._static_bounds()
 
     def get_rotation(self) -> float:
@@ -262,6 +285,60 @@ class Arena:
         for obs in self.obstacles:
             if isinstance(obs, MovingCircleObstacle):
                 obs.update_position(self.frame)
+
+    def get_circle_center(self) -> Tuple[float, float]:
+        return (self.width * 0.5, self.height * 0.5)
+
+    def get_circle_radius(self) -> float:
+        pulse = math.sin(self.frame * self.circle_pulse_speed) * self.circle_pulse_amplitude
+        return self.circle_radius + pulse
+
+    def get_circle_rotation(self) -> float:
+        return self.frame * self.circle_rotation_speed
+
+    def is_in_gap(self, pos) -> bool:
+        """Check if a position is in a gap of the circular arena."""
+        if self.circle_gap_count <= 0:
+            return False
+        cx, cy = self.get_circle_center()
+        dx = pos.x - cx
+        dy = pos.y - cy
+        angle = math.atan2(dy, dx)  # -pi to pi
+        if angle < 0:
+            angle += 2 * math.pi    # 0 to 2pi
+
+        rotation = self.get_circle_rotation()
+        gap_spacing = 2 * math.pi / self.circle_gap_count
+        half_gap = self.circle_gap_size / 2
+
+        for i in range(self.circle_gap_count):
+            gap_center = (rotation + i * gap_spacing) % (2 * math.pi)
+            diff = abs(angle - gap_center)
+            if diff > math.pi:
+                diff = 2 * math.pi - diff
+            if diff < half_gap:
+                return True
+        return False
+
+    def ball_collision_with_circle(self, pos, vel, radius: float):
+        """
+        Handle ball collision with circular arena boundary.
+        Returns a list of (normal, speed) tuples for collisions.
+        """
+        cx, cy = self.get_circle_center()
+        arena_r = self.get_circle_radius()
+
+        dx = pos.x - cx
+        dy = pos.y - cy
+        dist = math.sqrt(dx * dx + dy * dy)
+        speed = vel.magnitude()
+        collisions = []
+
+        if dist + radius > arena_r and dist > 0:
+            normal = Vector2(dx / dist, dy / dist)
+            collisions.append((normal, speed))
+
+        return collisions
 
     def ball_inside_arena(self, x: float, y: float, radius: float) -> bool:
         """Check if ball circle is fully inside the non-rotated arena bounds."""
@@ -387,5 +464,14 @@ def create_arena(width: int, height: int, mechanic: ArenaMechanic,
     elif mechanic == ArenaMechanic.ROTATING:
         arena.rotation_speed = style.get("rotation_speed", 0.008)
         arena.max_rotation = style.get("max_rotation", math.pi / 6)
+    elif mechanic == ArenaMechanic.CIRCULAR:
+        min_dim = min(width, height)
+        arena.circle_radius = style.get("circle_radius", min_dim * 0.35)
+        arena.circle_color = style.get("circle_color", (100, 100, 255))
+        arena.circle_rotation_speed = style.get("circle_rotation_speed", 0.03)
+        arena.circle_pulse_speed = style.get("circle_pulse_speed", 0.02)
+        arena.circle_pulse_amplitude = style.get("circle_pulse_amplitude", 0.0)
+        arena.circle_gap_count = style.get("circle_gap_count", 0)
+        arena.circle_gap_size = style.get("circle_gap_size", 0.15)
 
     return arena
